@@ -1,7 +1,9 @@
 {
-  "name": "ecommerce-fullstack",
-  "version": "1.0.0",
+  "name": "novastore-render-postgres",
+  "version": "2.0.0",
+  "private": true,
   "scripts": {
-    "start": "docker-compose up --build"
+    "backend": "cd backend && npm run dev",
+    "frontend": "cd frontend && npm run dev"
   }
 }

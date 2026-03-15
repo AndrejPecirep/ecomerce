@@ -1,34 +1,48 @@
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const User = require("../models/User");
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-exports.register = (req, res, next) => {
-  const { name, email, password } = req.body;
-
-  User.findByEmail(email, async (err, results) => {
-    if (err) return next(err);
-    if (results.length > 0) return res.status(400).json({ message: "Email already registered" });
+exports.register = async (req, res, next) => {
+  try {
+    const { name, email, password } = req.body;
+    const existing = await User.findByEmail(email);
+    if (existing) {
+      return res.status(400).json({ message: 'Email already registered' });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    User.create({ name, email, password: hashedPassword }, (err) => {
-      if (err) return next(err);
-      res.status(201).json({ message: "User registered successfully" });
-    });
-  });
+    await User.create({ name, email, password: hashedPassword });
+    res.status(201).json({ message: 'User registered successfully' });
+  } catch (err) {
+    next(err);
+  }
 };
 
-exports.login = (req, res, next) => {
-  const { email, password } = req.body;
+exports.login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findByEmail(email);
 
-  User.findByEmail(email, async (err, results) => {
-    if (err) return next(err);
-    if (results.length === 0) return res.status(400).json({ message: "Invalid credentials" });
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
 
-    const user = results[0];
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
 
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
-  });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, name: user.name },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    });
+  } catch (err) {
+    next(err);
+  }
 };

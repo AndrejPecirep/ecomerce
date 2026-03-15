@@ -1,31 +1,46 @@
-const Product = require("../models/Product");
+const Product = require('../models/Product');
 
-exports.getProducts = (req, res, next) => {
-  Product.getAll((err, results) => {
-    if (err) return next(err);
-    res.json(results);
-  });
+exports.getProducts = async (req, res, next) => {
+  try {
+    const products = await Product.getAll();
+    res.json(products);
+  } catch (err) {
+    next(err);
+  }
 };
 
-exports.searchProducts = (req, res, next) => {
-  const { query, category } = req.query;
-  Product.search(query || "", category || null, (err, results) => {
-    if (err) return next(err);
-    res.json(results);
-  });
+exports.searchProducts = async (req, res, next) => {
+  try {
+    const { query = '', category = '' } = req.query;
+    const products = await Product.search(query, category);
+    res.json(products);
+  } catch (err) {
+    next(err);
+  }
 };
 
-exports.getCategories = (req, res, next) => {
-  Product.getCategories((err, results) => {
-    if (err) return next(err);
-    res.json(results.map((r) => r.category));
-  });
+exports.getCategories = async (req, res, next) => {
+  try {
+    const categories = await Product.getCategories();
+    res.json(categories);
+  } catch (err) {
+    next(err);
+  }
 };
 
-exports.createProduct = (req, res, next) => {
-  const { name, description, price, image, category } = req.body;
-  Product.create({ name, description, price, image, category }, (err, result) => {
-    if (err) return next(err);
-    res.status(201).json({ message: "Product created", productId: result.insertId });
-  });
+exports.createProduct = async (req, res, next) => {
+  try {
+    const { name, description, price, image, category, stock } = req.body;
+    const created = await Product.create({
+      name,
+      description,
+      price: Number(price),
+      image,
+      category,
+      stock: Number(stock || 0),
+    });
+    res.status(201).json({ message: 'Product created', product: created });
+  } catch (err) {
+    next(err);
+  }
 };

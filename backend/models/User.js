@@ -1,20 +1,19 @@
-const db = require("../config/db");
+const db = require('../config/db');
 
 class User {
-  static findByEmail(email, callback) {
-    db.query("SELECT * FROM users WHERE email = ?", [email], callback);
+  static async findByEmail(email) {
+    const result = await db.query('SELECT * FROM users WHERE email = $1 LIMIT 1', [email]);
+    return result.rows[0] || null;
   }
 
-  static findById(id, callback) {
-    db.query("SELECT * FROM users WHERE id = ?", [id], callback);
-  }
-
-  static create({ name, email, password }, callback) {
-    db.query(
-      "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
-      [name, email, password],
-      callback
+  static async create({ name, email, password, role = 'customer' }) {
+    const result = await db.query(
+      `INSERT INTO users (name, email, password, role)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, email, role`,
+      [name, email, password, role]
     );
+    return result.rows[0];
   }
 }
 

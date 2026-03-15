@@ -1,68 +1,83 @@
-const Order = require("../models/Order");
-const Product = require("../models/Product");
+const Order = require('../models/Order');
+const Product = require('../models/Product');
+const db = require('../config/db');
 
-/**
- * createOrder expects:
- * req.body = {
- *   products: [{ id, name, quantity, price }],
- *   total: decimal (units, e.g. 25.99),
- *   address,
- *   paymentIntentId
- * }
- *
- * It will validate totals against DB prices before inserting order.
- */
-exports.createOrder = (req, res, next) => {
+exports.createOrder = async (req, res, next) => {
   try {
-    const userId = req.user && req.user.id;
-    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-    const { products, total, address, paymentIntentId } = req.body;
+    const { products, address, note = '' } = req.body;
     if (!Array.isArray(products) || products.length === 0) {
-      return res.status(400).json({ message: "No products provided" });
+      return res.status(400).json({ message: 'No products provided' });
+    }
+    if (!address?.trim()) {
+      return res.status(400).json({ message: 'Delivery address is required' });
     }
 
-    const ids = products.map((p) => Number(p.id));
-    Product.findByIds(ids, (err, dbProducts) => {
-      if (err) return next(err);
+    const ids = products.map((item) => Number(item.id)).filter(Boolean);
+    const dbProducts = await Product.findByIds(ids);
+    const byId = new Map(dbProducts.map((product) => [product.id, product]));
 
-      const byId = {};
-      dbProducts.forEach((p) => byId[p.id] = p);
+    let expectedTotal = 0;
+    const normalizedProducts = [];
 
-      let expectedTotal = 0;
-      for (let item of products) {
-        const dbp = byId[item.id];
-        if (!dbp) return res.status(400).json({ message: `Product id ${item.id} not found in DB` });
-        const qty = Number(item.quantity || 1);
-        expectedTotal += parseFloat(dbp.price) * qty;
+    for (const item of products) {
+      const dbProduct = byId.get(Number(item.id));
+      if (!dbProduct) {
+        return res.status(400).json({ message: `Product ${item.id} not found` });
       }
 
-      // Allow small rounding tolerance (e.g. 0.01)
-      if (Math.abs(expectedTotal - Number(total)) > 0.01) {
-        return res.status(400).json({ message: "Total mismatch. Order total does not match server prices." });
+      const quantity = Math.max(1, Number(item.quantity || 1));
+      if (dbProduct.stock < quantity) {
+        return res.status(400).json({ message: `${dbProduct.name} is out of stock for the requested quantity` });
       }
 
-      // all good — create order in DB (store server-verified products and total)
-      Order.create({
-        userId,
-        products,
-        total: expectedTotal,
-        address,
-        paymentIntentId: paymentIntentId || null,
-      }, (err2, result) => {
-        if (err2) return next(err2);
-        res.status(201).json({ message: "Order created", orderId: result.insertId });
+      expectedTotal += Number(dbProduct.price) * quantity;
+      normalizedProducts.push({
+        id: dbProduct.id,
+        name: dbProduct.name,
+        quantity,
+        price: Number(dbProduct.price),
+        image: dbProduct.image,
       });
-    });
-  } catch (error) {
-    next(error);
+    }
+
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const item of normalizedProducts) {
+        await client.query(
+          'UPDATE products SET stock = stock - $1 WHERE id = $2 AND stock >= $1',
+          [item.quantity, item.id]
+        );
+      }
+
+      const created = await client.query(
+        `INSERT INTO orders (user_id, products, total, address, note)
+         VALUES ($1, $2::jsonb, $3, $4, $5)
+         RETURNING id`,
+        [userId, JSON.stringify(normalizedProducts), expectedTotal.toFixed(2), address.trim(), note.trim()]
+      );
+
+      await client.query('COMMIT');
+      res.status(201).json({ message: 'Order created successfully', orderId: created.rows[0].id });
+    } catch (transactionErr) {
+      await client.query('ROLLBACK');
+      throw transactionErr;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    next(err);
   }
 };
 
-exports.getUserOrders = (req, res, next) => {
-  const userId = req.user.id;
-  Order.findByUser(userId, (err, results) => {
-    if (err) return next(err);
-    res.json(results);
-  });
+exports.getUserOrders = async (req, res, next) => {
+  try {
+    const orders = await Order.findByUser(req.user.id);
+    res.json(orders);
+  } catch (err) {
+    next(err);
+  }
 };

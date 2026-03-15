@@ -1,0 +1,43 @@
+databases:
+  - name: novastore-db
+    databaseName: novastore
+    user: novastore_user
+
+services:
+  - type: web
+    name: novastore-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: novastore-db
+          property: connectionString
+      - key: CLIENT_URL
+        sync: false
+      - key: OWNER_EMAIL
+        sync: false
+      - key: OWNER_PASSWORD
+        sync: false
+      - key: OWNER_NAME
+        value: Store Owner
+
+  - type: web
+    name: novastore-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_API_URL
+        sync: false
